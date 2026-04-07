@@ -4,3 +4,4 @@ A simple and multithreaded file search utility written in C, fastsearch is desig
 It creates the maximum possible number of system threads that it can use for efficiency.
 It returns one found location of the filename per line, beginning its search from the current working directory.
 Filename comparison is exact-match only.
+It is not as fast as `find` from the findutils but it is uncopyrighted with no rights reserved. It is intended as a programming demonstration.
