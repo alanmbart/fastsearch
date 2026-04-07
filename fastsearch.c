@@ -9,6 +9,10 @@
 // Global flag indicating thread limit was reached.
 volatile char thread_limit_reached = 0;
 
+// Synchronization for thread tracking
+pthread_mutex_t count_mutex = PTHREAD_MUTEX_INITIALIZER;
+int active_threads = 0;
+
 // Data passed to threads: A current path and the target file name.
 struct threadTask {
   char path[1024];
@@ -20,6 +24,9 @@ void *scan_dir(void *arg) {
   struct threadTask *task = (struct threadTask *)arg;
   DIR *directory = opendir(task->path);
   if (!directory) {
+    pthread_mutex_lock(&count_mutex);
+    active_threads--;
+    pthread_mutex_unlock(&count_mutex);
     free(task);
     return NULL;
   }
@@ -48,10 +55,14 @@ void *scan_dir(void *arg) {
       struct threadTask *childTask = malloc(sizeof(struct threadTask));
       strncpy(childTask->path, full_path, sizeof(childTask->path));
       strncpy(childTask->target, task->target, sizeof(childTask->target));
+      
+      pthread_mutex_lock(&count_mutex);
+      active_threads++;
+      pthread_mutex_unlock(&count_mutex);
+
       if (pthread_create(&th, NULL, scan_dir, childTask)) {
         thread_limit_reached = 1;
         scan_dir(childTask);
-        free(childTask);
       } else {
         pthread_detach(th);
       }
@@ -59,6 +70,11 @@ void *scan_dir(void *arg) {
   }
   closedir(directory);
   free(task);
+
+  pthread_mutex_lock(&count_mutex);
+  active_threads--;
+  pthread_mutex_unlock(&count_mutex);
+  
   return NULL;
 }
 
@@ -71,6 +87,9 @@ int main(int argc, char **argv) {
   struct threadTask *root = malloc(sizeof(struct threadTask));
   strncpy(root->path, argv[1], sizeof(root->path));
   strncpy(root->target, argv[2], sizeof(root->target));
+  
+  active_threads = 1;
+
   // Begin the first searching thread!
   pthread_t th;
   if (pthread_create(&th, NULL, scan_dir, root) != 0) {
@@ -78,7 +97,18 @@ int main(int argc, char **argv) {
     free(root);
     return 1;
   }
-  // Captures the first thread.
-  pthread_join(th, NULL);
+  pthread_detach(th);
+
+  // Monitor active threads until completion.
+  while (1) {
+    pthread_mutex_lock(&count_mutex);
+    if (active_threads <= 0) {
+      pthread_mutex_unlock(&count_mutex);
+      break;
+    }
+    pthread_mutex_unlock(&count_mutex);
+    usleep(1000); 
+  }
+
   return 0;
 }
